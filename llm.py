@@ -2,12 +2,10 @@ import os
 
 from dotenv import load_dotenv
 from langchain import hub
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone
 
 
