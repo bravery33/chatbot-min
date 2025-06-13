@@ -20,14 +20,20 @@ from pinecone import Pinecone
 
 from config import answer_examples
 
+load_dotenv()
 store = {}
+
+def get_session_history(session_id: str) -> BaseChatMessageHistory:
+    if session_id not in store:
+        store[session_id] = ChatMessageHistory()
+    return store[session_id]
+
 
 def load_llm(model='gpt-4o'):
     return ChatOpenAI(model=model, streaming=True)
 
 
 def load_vectorstore():
-    load_dotenv()
     PINECONE_API_KEY = os.getenv('PINECONE_API_KEY') 
     Pinecone(api_key=PINECONE_API_KEY)
 
@@ -41,17 +47,11 @@ def load_vectorstore():
     return database
 
 
-def get_session_history(session_id: str) -> BaseChatMessageHistory:
-    if session_id not in store:
-        store[session_id] = ChatMessageHistory()
-    return store[session_id]
-
-
 def build_history_aware_retriever(llm, retriever):
     contextualize_q_system_prompt = (
         '''
         [identity]
-        - 당신은 국문학과 교수입니다.
+        - 당신은 사용자의 질문을 명확하게 다듬어주는 질문 재구성 전문 AI입니다.
         - 주어진 대화 이력과 사용자의 최근 질문을 참고하여, 이전 대화의 맥락을 몰라도 이해할 수 있도록 질문을 재구성하세요.
         - 질문에 직접 답변하지 마세요. 
         - 필요한 경우에만 질문을 다듬고, 다듬을 필요가 없으면 원래 질문을 그대로 반환하세요.
@@ -72,42 +72,41 @@ def build_history_aware_retriever(llm, retriever):
 
 
 def build_few_shot_examples() -> str:
-    example_prompt = PromptTemplate.from_template("질문: {input}\n\답변: {answer}")
-    few_shot_prompt = FewShotPromptTemplate(
-        examples=answer_examples,
-        example_prompt=example_prompt,
-        prefix="다음 질문에 답변하세요 :",
-        suffix="질문: {input}",
-        input_variables=["input"],
-    )
-    foramtted_few_shot_prompt = few_shot_prompt.format(input='{input}')
+    examples_str = ""
+    for example in answer_examples:
+        examples_str += f"질문: {example['input']}\n답변: {example['answer']}\n\n"
+    return examples_str
 
-    return foramtted_few_shot_prompt
+def get_rag_prompt() -> ChatPromptTemplate:
+    """
+    RAG 체인을 위한 ChatPromptTemplate을 생성합니다.
+    이 프롬프트는 시스템 역할, Few-shot 예제, 대화 기록,
+    그리고 사용자 질문과 컨텍스트를 포함합니다.
+    """
+    # Few-shot 예제 문자열을 생성합니다.
+    few_shot_examples_str = build_few_shot_examples()
 
-def get_rag_prompt():
-    LANGCHAIN_API_KEY = os.getenv('LANGCHAIN_API_KEY')
-    prompt = hub.pull('bravery/rag-prompt-01', api_key=LANGCHAIN_API_KEY)
-    return prompt
+    # LLM에게 전달할 시스템 메시지를 정의합니다.
+    system_prompt_text = f"""
+[identity]
+- 당신은 UAE(아랍에미리트)의 AI 산업 전문가입니다.
+- 주어진 문서(CONTEXT)를 바탕으로 사용자의 질문에 대해 상세하고 정확하게 한국어로 답변해야 합니다.
+- 답변은 명확하고 구조화된 형식(예: 리스트, 단락)을 사용해 가독성을 높여주세요.
+- 문서에 없는 내용은 답변에 포함하지 마세요.
 
-def get_retrievalQA():
-    LANGCHAIN_API_KEY = os.getenv('LANGCHAIN_API_KEY')
-    database = load_vectorstore()
-    prompt = hub.pull('bravery/rag-prompt-01', api_key=LANGCHAIN_API_KEY)
-    llm = load_llm()
-
-    def format_docs(docs):
-        return '\n\n'.join(doc.page_content for doc in docs)
+[few_shot_examples]
+다음은 좋은 질문과 답변의 예시입니다. 이 스타일을 참고하여 답변해주세요.
+---
+{few_shot_examples_str}---
+"""
     
-    qa_chain = (
-        {
-            'context': database.as_retriever() | format_docs,
-            'input': RunnablePassthrough(),
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-    return qa_chain
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt_text),
+        MessagesPlaceholder("chat_history"),
+        ("human", "CONTEXT:\n{context}\n\n질문:\n{input}"),
+    ])
+
+    return prompt
 
 
 def build_conversational_chain():
