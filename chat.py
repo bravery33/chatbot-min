@@ -4,13 +4,21 @@ from llm import stream_ai_message
 
 st.set_page_config(
     page_title='UAE의 AI 산업관련 문의 챗봇',
-    page_icon='🏜',
+    page_icon='👳‍♂️',
     )
 
-st.title('🏜UAE AI 문의 챗봇🏜')
+st.title('UAE의 AI산업 관련 문의 챗봇👳‍♂️')
+
+query_params = st.query_params
+
+if 'session_id' in query_params:
+    session_id = query_params['session_id']
+else:
+    session_id = str(uuid.uuid4())
+    st.query_params.update({'session_id': session_id})
 
 if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
+    st.session_state.session_id = session_id
 
 if 'message_list' not in st.session_state:
     st.session_state.message_list = []

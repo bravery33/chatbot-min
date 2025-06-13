@@ -8,19 +8,25 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import (ChatPromptTemplate, 
+                                    MessagesPlaceholder, 
+                                    FewShotPromptTemplate, 
+                                    PromptTemplate)
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
 
+from config import answer_examples
 
-def get_llm(model='gpt-4o'):
+store = {}
+
+def load_llm(model='gpt-4o'):
     return ChatOpenAI(model=model, streaming=True)
 
 
-def get_database():
+def load_vectorstore():
     load_dotenv()
     PINECONE_API_KEY = os.getenv('PINECONE_API_KEY') 
     Pinecone(api_key=PINECONE_API_KEY)
@@ -35,15 +41,13 @@ def get_database():
     return database
 
 
-store = {}
-
 def get_session_history(session_id: str) -> BaseChatMessageHistory:
     if session_id not in store:
         store[session_id] = ChatMessageHistory()
     return store[session_id]
 
 
-def get_history_retriever(llm, retriever):
+def build_history_aware_retriever(llm, retriever):
     contextualize_q_system_prompt = (
         '''
         [identity]
@@ -67,6 +71,19 @@ def get_history_retriever(llm, retriever):
     return history_aware_retriever
 
 
+def build_few_shot_examples() -> str:
+    example_prompt = PromptTemplate.from_template("질문: {input}\n\답변: {answer}")
+    few_shot_prompt = FewShotPromptTemplate(
+        examples=answer_examples,
+        example_prompt=example_prompt,
+        prefix="다음 질문에 답변하세요 :",
+        suffix="질문: {input}",
+        input_variables=["input"],
+    )
+    foramtted_few_shot_prompt = few_shot_prompt.format(input='{input}')
+
+    return foramtted_few_shot_prompt
+
 def get_rag_prompt():
     LANGCHAIN_API_KEY = os.getenv('LANGCHAIN_API_KEY')
     prompt = hub.pull('bravery/rag-prompt-01', api_key=LANGCHAIN_API_KEY)
@@ -74,9 +91,9 @@ def get_rag_prompt():
 
 def get_retrievalQA():
     LANGCHAIN_API_KEY = os.getenv('LANGCHAIN_API_KEY')
-    database = get_database()
+    database = load_vectorstore()
     prompt = hub.pull('bravery/rag-prompt-01', api_key=LANGCHAIN_API_KEY)
-    llm = get_llm()
+    llm = load_llm()
 
     def format_docs(docs):
         return '\n\n'.join(doc.page_content for doc in docs)
@@ -94,10 +111,10 @@ def get_retrievalQA():
 
 
 def build_conversational_chain():
-    llm = get_llm()
-    database = get_database()
+    llm = load_llm()
+    database = load_vectorstore()
     retriever = database.as_retriever(search_kwargs={'k': 2})
-    history_aware_retriever= get_history_retriever(llm, retriever)
+    history_aware_retriever= build_history_aware_retriever(llm, retriever)
     
     prompt = get_rag_prompt()
     question_answer_chain = create_stuff_documents_chain(llm, prompt)

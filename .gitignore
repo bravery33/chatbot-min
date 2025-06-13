@@ -1,7 +1,6 @@
 ## 파일
 .env
-database.py
-all_pages.txt
 
 ## 폴더
 __pycache__/
+secret/
