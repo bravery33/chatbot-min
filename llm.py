@@ -1,4 +1,5 @@
 import os
+import json
 
 from dotenv import load_dotenv
 from langchain import hub
@@ -107,6 +108,19 @@ def get_rag_prompt() -> ChatPromptTemplate:
     ])
 
     return prompt
+
+
+def load_dictionay_from_file(path='keyword_dictionary.json'):
+    with open(path, 'r', encoding='utf-8') as file:
+
+        return json.load(file)
+
+
+def build_dictionary_text(dictionary: dict) -> str: 
+    return '\n'.join([
+        f'{k} ({", ".join(v["tag"])}): {v["definition"]} [출처: {v["source"]}]'
+        for k, v in dictionary.items()
+        ])
 
 
 def build_conversational_chain():
